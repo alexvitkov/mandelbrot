@@ -4,8 +4,6 @@ WORKDIR /usr/src/mandelbrot
 COPY Cargo.toml .
 COPY src ./src
 
-
-#RUN ls
 RUN cargo install --path .
 
-ENTRYPOINT [ "mandelbrot" ]
+ENTRYPOINT [ "sh" ]

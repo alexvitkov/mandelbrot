@@ -40,9 +40,9 @@ fn main() {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("chunksize")
-                .short("c")
-                .long("chunksize")
+            Arg::with_name("granularity")
+                .short("g")
+                .long("granularity")
                 .takes_value(true),
         )
         .get_matches();
@@ -67,16 +67,12 @@ fn main() {
         .parse::<usize>()
         .expect("Invalid iter, expected integer");
 
-    let chunksize = match matches.value_of("chunksize") {
-        Some(x) => x.parse().expect("Invalid chunksize expected integer"),
-        None => {
-            if size.0 * size.1 < 1000000 {
-                10000
-            } else {
-                100000
-            }
-        } // TODO
-    };
+    let chunksize: usize = size.0 * size.1 * tasks
+        / matches
+            .value_of("granularity")
+            .unwrap_or("1")
+            .parse::<usize>()
+            .expect("Inalid granularity, expected integer");
 
     let options = mandelbrot::Options::new(size, rect, tasks, iter, chunksize);
     let data = mandelbrot::compute(options);
