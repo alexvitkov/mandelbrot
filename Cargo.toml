@@ -9,3 +9,10 @@ edition = "2018"
 [dependencies]
 # command line args parser
 clap = "2.33.1"     
+num = "0.2.1"     
+png = "0.16.4"
+crossbeam = "0.7.3"
+
+[[bin]]
+name="mandelbrot"
+path="src/main.rs"
