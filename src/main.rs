@@ -45,6 +45,7 @@ fn main() {
                 .long("granularity")
                 .takes_value(true),
         )
+        .arg(Arg::with_name("nooutput").long("nooutput"))
         .get_matches();
 
     let size_input = matches.value_of("size").unwrap_or("640x480");
@@ -86,12 +87,14 @@ fn main() {
     }
     */
 
-    savepng::save(
-        options.img_size.x,
-        options.img_size.y,
-        &data[..],
-        outputpath,
-    );
+    if !matches.is_present("nooutput") {
+        savepng::save(
+            options.img_size.x,
+            options.img_size.y,
+            &data[..],
+            outputpath,
+        );
+    }
 }
 
 fn parse_size(s: &str) -> Option<(usize, usize)> {
