@@ -147,16 +147,14 @@ where
 {
     let pxf = o.p2c(px);
 
-    //println!("{:?} {:?}", px, pxf);
-
     let c = Complex::new(pxf.x, pxf.y);
     let mut z = Complex::new(0., 0.);
 
     for i in 0..o.iter {
         // Normalen mandelbrot
-        z = z * z + c;
+        // z = z * z + c;
         // proekt 18
-        // z = c * z.cos();
+        z = c * z.cos();
         // proekt 16
         // z = c * Complex::new(std::f32::consts::E, 0.).powc(-z) + z * z;
 
