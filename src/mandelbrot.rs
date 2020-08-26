@@ -1,19 +1,20 @@
 use num::complex::Complex;
-
 use crossbeam;
-use std::sync::{Arc, Mutex};
-
-mod v2;
-use v2::{V2f, V2u, V2};
 
 #[derive(Copy, Clone)]
 pub struct Options {
     tasks: usize,
     iter: usize,
-    pub img_size: V2u,
-    min: V2f,
-    multiplier: V2f,
+    pub img_size_x: usize,
+    pub img_size_y: usize,
+    pub img_size_x_f32: f32,
+    pub img_size_y_f32: f32,
     chunksize: usize,
+
+    min_x: f32,
+    min_y: f32,
+    width: f32,
+    height: f32,
 }
 
 impl Options {
@@ -24,139 +25,106 @@ impl Options {
         iter: usize,
         chunksize: usize,
     ) -> Options {
-        let (xmin, xmax, ymin, ymax) = rect;
-
-        let img_size_v: V2u = V2u::from(img_size);
-        let img_size_f = V2f::from(&img_size_v);
-        let min = V2f { x: xmin, y: ymin };
-        let max = V2f { x: xmax, y: ymax };
-        let rect_size = &max - &min;
-        let multiplier = &rect_size / &img_size_f;
 
         Options {
-            img_size: img_size_v,
-            min: min,
-            multiplier: multiplier,
+            img_size_x: img_size.0,
+            img_size_y: img_size.1,
+            img_size_x_f32: img_size.0 as f32,
+            img_size_y_f32: img_size.1 as f32,
+            min_x: rect.0,
+            min_y: rect.2,
+            width: rect.1 - rect.0,
+            height: rect.3 - rect.2,
             tasks: thread_count,
             iter: iter,
             chunksize: chunksize,
         }
     }
-
-    pub fn p2c(&self, p: &V2u) -> V2f {
-        V2 {
-            x: p.x as f32 * self.multiplier.x + self.min.x,
-            y: p.y as f32 * self.multiplier.y + self.min.y,
-        }
-        //  &(&V2<T>::from(p) * &self.multiplier) + &self.min
-        /*
-        V2 {
-            x: F::from_usize(p.x).unwrap() * F::from_f32(self.multiplier.x).unwrap(),
-            y: F::from_usize(p.x).unwrap() * F::from_f32(self.multiplier.x).unwrap(),
-        }
-        */
-    }
 }
 
-struct SharedData<'a> {
-    chunks: &'a mut std::slice::ChunksMut<'a, u8>,
-    startpx: usize,
-}
+pub static mut DATA: Vec<u8> = vec![];
 
-pub fn compute(o: Options) -> Vec<u8> {
-    let size = 3 * o.img_size.x * o.img_size.y;
-    let mut vtor: Vec<u8> = Vec::with_capacity(size);
+pub fn compute(o: Options) { 
+    let vec_size = 3 * o.img_size_x * o.img_size_y;
+    let start_time = std::time::Instant::now();
+
     unsafe {
-        vtor.set_len(size);
+        DATA = Vec::with_capacity(vec_size);
+        DATA.set_len(vec_size);
+
+        let chunk_size = o.chunksize * 3;
+        let chunks_count = DATA.len() / chunk_size;
+
+        let _ = crossbeam::scope(|scope| {
+            for i in 0..o.tasks {
+                scope.spawn(move |_| {
+                    worker(chunks_count, chunk_size, &o, i);
+                });
+            }
+        });
     }
 
-    let mut ch = vtor.chunks_mut(o.chunksize * 3);
-
-    let _ = crossbeam::scope(|scope| {
-        let shared = SharedData {
-            chunks: &mut ch,
-            startpx: 0,
-        };
-        let mutex = Arc::new(Mutex::new(shared));
-
-        for i in 0..o.tasks {
-            let arc2 = Arc::clone(&mutex);
-            scope.spawn(move |_| {
-                worker(arc2, &o, i);
-            });
-        }
-    });
-
-    vtor
+    print!("All done in ");
+    if start_time.elapsed().as_millis() < 2000 {
+        println!(" {}ms", start_time.elapsed().as_millis())
+    } else {
+        println!(" {}s", start_time.elapsed().as_millis() as f32 / 1000.)
+    }
 }
 
-fn worker(shared: Arc<Mutex<SharedData>>, o: &Options, n: usize) {
-    let now = std::time::Instant::now();
-    loop {
-        let data: &mut [u8];
-        let startpx: usize;
-        {
-            let mut shared = shared.lock().unwrap();
+unsafe fn worker(chunks_count: usize, chunk_size: usize, o: &Options, thread_id: usize) {
+    let start_time = std::time::Instant::now();
 
-            match (*shared).chunks.next() {
-                Some(x) => {
-                    data = x;
-                    startpx = (*shared).startpx;
-                    (*shared).startpx += data.len() / 3;
-                }
-                None => {
-                    print!("Thread {} finished in ", n);
-                    if now.elapsed().as_millis() < 2000 {
-                        println!(" {}ms", now.elapsed().as_millis())
-                    } else {
-                        println!(" {}s", now.elapsed().as_millis() as f32 / 1000.)
-                    }
-                    return;
-                }
-            }
+    println!("Thread {} started.", thread_id);
+
+    for n in (thread_id..chunks_count).step_by(o.tasks) {
+
+        let chunk_start = n * chunk_size;
+        let mut chunk_end = chunk_start + chunk_size;
+        if chunk_end > (*DATA).len() {
+            chunk_end = (*DATA).len();
         }
 
-        let w = o.img_size.x;
-        let endpx = startpx + data.len() / 3;
-
-        for i in startpx..endpx {
-            let x = i % w;
-            let y = i / w;
-            let ds = i * 3 - startpx * 3;
-            let val = mandelbrot(o, &V2u { x, y });
+        for i in (chunk_start..chunk_end).step_by(3) {
+            let x = (i / 3) % o.img_size_x;
+            let y = (i / 3) / o.img_size_x;
+            let val = mandelbrot(o, x, y);
             if val < 0 {
-                data[ds] = 255;
-                data[ds + 1] = 255;
-                data[ds + 2] = 255;
+                (*DATA)[i] = 255;
+                (*DATA)[i + 1] = 255;
+                (*DATA)[i + 2] = 255;
             } else {
                 let v = val as f32 / o.iter as f32;
                 let b = (v * 255.) as u8;
-                data[ds] = b / 2;
-                data[ds + 1] = 0;
-                data[ds + 2] = b;
+                (*DATA)[i] = b / 2;
+                (*DATA)[i + 1] = 0;
+                (*DATA)[i + 2] = b;
             }
-
-            //println!("{} {} {}", x, y, data[ds]);
-            //panic!();
         }
     }
+
+    print!("Thread {} finished in ", thread_id);
+    if start_time.elapsed().as_millis() < 2000 {
+        println!(" {}ms", start_time.elapsed().as_millis())
+    } else {
+        println!(" {}s", start_time.elapsed().as_millis() as f32 / 1000.)
+    }
+
 }
 
-fn mandelbrot(o: &Options, px: &V2u) -> i32
-where
-{
-    let pxf = o.p2c(px);
+fn mandelbrot(o: &Options, x: usize, y: usize) -> i32 {
 
-    let c = Complex::new(pxf.x, pxf.y);
+    let x = ((x as f32) / o.img_size_x_f32) * o.width + o.min_x;
+    let y = ((y as f32) / o.img_size_y_f32) * o.height + o.min_y;
+
+    let c = Complex::new(x as f32, y as f32);
+
     let mut z = Complex::new(0., 0.);
 
     for i in 0..o.iter {
-        // Normalen mandelbrot
-        // z = z * z + c;
-        // proekt 18
-        z = c * z.cos();
-        // proekt 16
-        // z = c * Complex::new(std::f32::consts::E, 0.).powc(-z) + z * z;
+        // z = z * z + c;                                                       // Normalen mandelbrot
+        z = c * z.cos();                                                        // proekt 18
+        // z = c * Complex::new(std::f32::consts::E, 0.).powc(-z) + z * z;      // proekt 16
 
         let norm = z.norm();
         if norm > 2. || norm.is_nan() {

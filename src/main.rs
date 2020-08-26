@@ -19,6 +19,7 @@ fn main() {
             Arg::with_name("rect")
                 .short("r")
                 .long("rect")
+                .allow_hyphen_values(true)
                 .takes_value(true),
         )
         .arg(
@@ -77,24 +78,19 @@ fn main() {
                 .expect("Inalid granularity, expected integer"));
 
     let options = mandelbrot::Options::new(size, rect, tasks, iter, chunksize);
-    let data = mandelbrot::compute(options);
+    mandelbrot::compute(options);
 
-    /*
-    for y in 0..options.img_size.y {
-        for x in 0..options.img_size.x {
-            print!("{}", data[(x + y * options.img_size.x) * 3]);
+    unsafe {
+        if !matches.is_present("nooutput") {
+            print!("Encoding data to .png and saving it to '{}'... ", outputpath);
+            savepng::save(
+                options.img_size_x,
+                options.img_size_y,
+                &mandelbrot::DATA[..],
+                outputpath,
+            );
+            println!("Done.");
         }
-        println!("");
-    }
-    */
-
-    if !matches.is_present("nooutput") {
-        savepng::save(
-            options.img_size.x,
-            options.img_size.y,
-            &data[..],
-            outputpath,
-        );
     }
 }
 
@@ -107,6 +103,7 @@ fn parse_size(s: &str) -> Option<(usize, usize)> {
 
 fn parse_rect(s: &str) -> Option<(f32, f32, f32, f32)> {
     let split = s
+        .replace(',', ":")
         .split(':')
         .map(|x| x.parse::<f32>())
         .collect::<Result<Vec<_>, _>>()
