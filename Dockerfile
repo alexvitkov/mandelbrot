@@ -6,4 +6,4 @@ COPY src ./src
 
 RUN cargo install --path .
 
-ENTRYPOINT [ "sh" ]
+ENTRYPOINT [ "mandelbrot" ]
