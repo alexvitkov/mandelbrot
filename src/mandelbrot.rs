@@ -9,7 +9,7 @@ pub struct Options {
     pub img_size_y: usize,
     pub img_size_x_f32: f32,
     pub img_size_y_f32: f32,
-    chunksize: usize,
+    pub granularity: usize,
 
     min_x: f32,
     min_y: f32,
@@ -23,7 +23,7 @@ impl Options {
         rect: (f32, f32, f32, f32),
         thread_count: usize,
         iter: usize,
-        chunksize: usize,
+        granularity: usize,
     ) -> Options {
 
         Options {
@@ -37,7 +37,7 @@ impl Options {
             height: rect.3 - rect.2,
             tasks: thread_count,
             iter: iter,
-            chunksize: chunksize,
+            granularity: granularity,
         }
     }
 }
@@ -52,8 +52,8 @@ pub fn compute(o: Options) {
         DATA = Vec::with_capacity(vec_size);
         DATA.set_len(vec_size);
 
-        let chunk_size = o.chunksize * 3;
-        let chunks_count = DATA.len() / chunk_size;
+        let chunks_count = o.tasks * o.granularity;
+        let chunk_size = DATA.len() / chunks_count;
 
         let _ = crossbeam::scope(|scope| {
             for i in 0..o.tasks {
@@ -84,6 +84,8 @@ unsafe fn worker(chunks_count: usize, chunk_size: usize, o: &Options, thread_id:
         if chunk_end > (*DATA).len() {
             chunk_end = (*DATA).len();
         }
+
+        // println!("{} {}" , chunk_start, chunk_end);
 
         for i in (chunk_start..chunk_end).step_by(3) {
             let x = (i / 3) % o.img_size_x;

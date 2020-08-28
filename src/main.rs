@@ -69,15 +69,13 @@ fn main() {
         .parse::<usize>()
         .expect("Invalid iter, expected integer");
 
-    let chunksize: usize = size.0 * size.1
-        / (tasks
-            * matches
+    let granularity: usize = matches
                 .value_of("granularity")
                 .unwrap_or("1")
                 .parse::<usize>()
-                .expect("Inalid granularity, expected integer"));
+                .expect("Inalid granularity, expected integer");
 
-    let options = mandelbrot::Options::new(size, rect, tasks, iter, chunksize);
+    let options = mandelbrot::Options::new(size, rect, tasks, iter, granularity);
     mandelbrot::compute(options);
 
     unsafe {
