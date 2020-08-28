@@ -1,5 +1,6 @@
 use num::complex::Complex;
-use crossbeam;
+use std::thread;
+use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 
 #[derive(Copy, Clone)]
 pub struct Options {
@@ -44,6 +45,8 @@ impl Options {
 
 pub static mut DATA: Vec<u8> = vec![];
 
+pub static ALIVE_THREADS: AtomicUsize = ATOMIC_USIZE_INIT;
+
 pub fn compute(o: Options) { 
     let vec_size = 3 * o.img_size_x * o.img_size_y;
     let start_time = std::time::Instant::now();
@@ -55,13 +58,19 @@ pub fn compute(o: Options) {
         let chunks_count = o.tasks * o.granularity;
         let chunk_size = DATA.len() / chunks_count;
 
-        let _ = crossbeam::scope(|scope| {
-            for i in 0..o.tasks {
-                scope.spawn(move |_| {
-                    worker(chunks_count, chunk_size, &o, i);
-                });
-            }
-        });
+
+        for i in 0..(o.tasks) {
+            thread::spawn(move || {
+                ALIVE_THREADS.fetch_add(1, Ordering::SeqCst);
+                worker(chunks_count, chunk_size, &o, i);
+                ALIVE_THREADS.fetch_sub(1, Ordering::SeqCst);
+            });
+        };
+    }
+
+    thread::sleep(std::time::Duration::from_millis(200)); 
+    while ALIVE_THREADS.load(Ordering::SeqCst) != 0 {
+        thread::sleep(std::time::Duration::from_millis(1)); 
     }
 
     print!("All done in ");
@@ -76,18 +85,20 @@ unsafe fn worker(chunks_count: usize, chunk_size: usize, o: &Options, thread_id:
     let start_time = std::time::Instant::now();
 
     println!("Thread {} started.", thread_id);
+        let mut c: i32 = 0;
 
     for n in (thread_id..chunks_count).step_by(o.tasks) {
 
         let chunk_start = n * chunk_size;
         let mut chunk_end = chunk_start + chunk_size;
-        if chunk_end > (*DATA).len() {
-            chunk_end = (*DATA).len();
+        if chunk_end > (*DATA).len() - 2 {
+            chunk_end = (*DATA).len() - 3;
         }
 
         // println!("{} {}" , chunk_start, chunk_end);
 
         for i in (chunk_start..chunk_end).step_by(3) {
+            c+=1;
             let x = (i / 3) % o.img_size_x;
             let y = (i / 3) / o.img_size_x;
             let val = mandelbrot(o, x, y);
@@ -105,7 +116,7 @@ unsafe fn worker(chunks_count: usize, chunk_size: usize, o: &Options, thread_id:
         }
     }
 
-    print!("Thread {} finished in ", thread_id);
+    print!("Thread {} ({}) finished in ", thread_id, c);
     if start_time.elapsed().as_millis() < 2000 {
         println!(" {}ms", start_time.elapsed().as_millis())
     } else {
